@@ -1,4 +1,6 @@
 out/
-llvm-project*/
-emsdk/
 build/
+upstream/
+.vscode/
+.target/
+
