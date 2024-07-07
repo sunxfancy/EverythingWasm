@@ -29,12 +29,6 @@
     var stderr = '';
     var Module = {
         noInitialRun: true,
-        print: function (text) {
-            console.log("stdout: "+text);
-        },
-        printErr: function (text) {
-            console.error("stderr: "+text);
-        },
         preRun: function () {
             console.log('pre-run');
             function on_stdin() {

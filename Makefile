@@ -73,6 +73,8 @@ configure/llvm: .target/configure/llvm
 		-s ALLOW_MEMORY_GROWTH=1 \
 		-s EXPORTED_FUNCTIONS=_main,_free,_malloc \
 		-s EXPORTED_RUNTIME_METHODS=FS,PROXYFS,ERRNO_CODES,allocateUTF8,ccall,cwrap \
+		-lproxyfs.js \
+        --js-library=$(SRC)/emlib/fsroot.js \
 	" emcmake cmake -G Ninja \
 		-B build/llvm \
 		-S upstream/${LLVM}/llvm \
