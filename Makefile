@@ -35,6 +35,12 @@ upstream/%:  .target/docker
 shell: .target/docker
 	$(DOCKER_RUN) bash
 
+clean:
+	rm -rf build .target
+
+dist-clean: clean
+	rm -rf upstream out
+
 help:
 	@echo "Usage: make <target>"
 	@echo ""
@@ -63,7 +69,11 @@ configure/llvm: .target/configure/llvm
 	@echo "Configuring LLVM..."
 	@mkdir -p build/llvm
 	@CXXFLAGS="-Dwait4=__syscall_wait4" \
-	emcmake cmake -G Ninja \
+	LDFLAGS="\
+		-s ALLOW_MEMORY_GROWTH=1 \
+		-s EXPORTED_FUNCTIONS=_main,_free,_malloc \
+		-s EXPORTED_RUNTIME_METHODS=FS,PROXYFS,ERRNO_CODES,allocateUTF8,ccall,cwrap \
+	" emcmake cmake -G Ninja \
 		-B build/llvm \
 		-S upstream/${LLVM}/llvm \
 		-DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
@@ -77,7 +87,6 @@ configure/llvm: .target/configure/llvm
 		-DLLVM_ENABLE_PROJECTS="clang" \
 		-DCMAKE_INSTALL_PREFIX=install \
 		-DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
-		$(call gen_linker_flags,-sEXPORTED_RUNTIME_METHODS=ccall$(COMMA)cwrap) \
 		-DCMAKE_TOOLCHAIN_FILE=${EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake && \
 		mkdir -p .target/configure && touch .target/configure/llvm
 
