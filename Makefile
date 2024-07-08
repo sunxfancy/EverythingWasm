@@ -1,7 +1,7 @@
 LLVM=llvm-project-18.1.8.src
 PYTHON_VERSION=3.12.4
 PYTHON=Python-$(PYTHON_VERSION)
-BROTLI=brotli-v1.1.0
+BROTLI=brotli-1.1.0
 
 BUILD_TYPE=Release
 PWD=$(shell pwd)
@@ -24,6 +24,8 @@ clang-format: .target/docker
 wasm-ld: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
 python: .target/docker
+	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
+brotli: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
 configure/%: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
@@ -53,6 +55,18 @@ help:
 	@echo "  clean:        Clean up"
 
 else # following targets are run inside docker
+
+export EMCC_DEBUG=1
+export CXXFLAGS=-Dwait4=__syscall_wait4
+export LDFLAGS=\
+		-s ALLOW_MEMORY_GROWTH=1 \
+		-s INVOKE_RUN=0 -s EXIT_RUNTIME=0 \
+		-s ASSERTIONS=1 \
+		-s EXPORTED_FUNCTIONS=_main,_free,_malloc \
+		-s EXPORTED_RUNTIME_METHODS=FS,PROXYFS,ERRNO_CODES,allocateUTF8,ccall,cwrap \
+		-lproxyfs.js \
+        --js-library=$(SRC)/emlib/fsroot.js \
+
 
 clang-install: 
 	@cd build/llvm && ninja -v install
@@ -84,17 +98,7 @@ configure/llvm: .target/configure/llvm
 .target/configure/llvm: Makefile .target/upstream/llvm-project
 	@echo "Configuring LLVM..."
 	@mkdir -p build/llvm
-	@CXXFLAGS="-Dwait4=__syscall_wait4" \
-	EMCC_DEBUG=1 \
-	LDFLAGS="\
-		-s ALLOW_MEMORY_GROWTH=1 \
-		-s INVOKE_RUN=0 -s EXIT_RUNTIME=0 \
-		-s ASSERTIONS=1 \
-		-s EXPORTED_FUNCTIONS=_main,_free,_malloc \
-		-s EXPORTED_RUNTIME_METHODS=FS,PROXYFS,ERRNO_CODES,allocateUTF8,ccall,cwrap \
-		-lproxyfs.js \
-        --js-library=$(SRC)/emlib/fsroot.js \
-	" emcmake cmake -G Ninja \
+	@emcmake cmake -G Ninja \
 		-B build/llvm \
 		-S upstream/${LLVM}/llvm \
 		-DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
@@ -140,13 +144,7 @@ configure/python: .target/configure/python
 	CONFIG_SITE=$(SRC)/build/python/Tools/wasm/config.site-wasm32-emscripten \
 	LIBSQLITE3_CFLAGS=" " \
 	BZIP2_CFLAGS=" " \
-	LDFLAGS="\
-		-s ALLOW_MEMORY_GROWTH=1 \
-		-s EXPORTED_FUNCTIONS=_main,_free,_malloc \
-		-s EXPORTED_RUNTIME_METHODS=FS,PROXYFS,ERRNO_CODES,allocateUTF8 \
-		-lproxyfs.js \
-		--js-library=$(SRC)/emlib/fsroot.js \
-	" emconfigure $(SRC)/build/python/configure -C \
+	emconfigure $(SRC)/build/python/configure -C \
 		--host=wasm32-unknown-emscripten \
 		--build=`$(SRC)/build/python/config.guess` \
 		--with-emscripten-target=browser \
@@ -157,17 +155,17 @@ configure/python: .target/configure/python
 		--with-build-python=$(SRC)/build/python-native/python
 	mkdir -p .target/configure && touch .target/configure/python
 
+brotli: .target/build/brotli
+.target/build/brotli: .target/configure/brotli
+	@cd build/brotli && ninja -v
+	@mkdir -p out
+	@$(WRAP_JS) build/brotli/brotli.js out/brotli.js
+	@cp build/brotli/brotli.wasm out/brotli.wasm
+	mkdir -p .target/build && touch .target/build/brotli
+
 configure/brotli: .target/configure/brotli
 .target/configure/brotli: Makefile .target/upstream/brotli
-	@CFLAGS="-flto" \
-	LDFLAGS="\
-		-flto \
-		-s ALLOW_MEMORY_GROWTH=1 \
-		-s EXPORTED_FUNCTIONS=_main,_free,_malloc \
-		-s EXPORTED_RUNTIME_METHODS=FS,PROXYFS,ERRNO_CODES,allocateUTF8 \
-		-lproxyfs.js \
-		--js-library=$(SRC)/emlib/fsroot.js \
-	" emcmake cmake -G Ninja \
+	@emcmake cmake -G Ninja \
 		-B build/brotli \
 		-S upstream/$(BROTLI) \
 		-DCMAKE_BUILD_TYPE=Release
@@ -198,8 +196,8 @@ upstream/brotli: .target/upstream/brotli
 	@echo "Downloading Brotli..."
 	@mkdir -p upstream
 	@cd upstream && wget -c https://github.com/google/brotli/archive/refs/tags/v1.1.0.tar.gz \
-		&& tar -xvf $(BROTLI).tar.gz \
-		&& rm -f $(BROTLI).tar.gz
+		&& tar -xvf v1.1.0.tar.gz \
+		&& rm -f v1.1.0.tar.gz
 	@mkdir -p .target/upstream && touch .target/upstream/brotli
 
 
