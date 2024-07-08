@@ -10,16 +10,18 @@ COMMA=,
 SRC=/src
 
 DOCKER_RUN=docker run -it --rm  -v "$(PWD):/src" -w /src --user `id -u`  everything_wasm
-
+WRAP_JS=bash $(SRC)/tooling/wrap-mjs/wrap-mjs.sh
 
 ifeq ($(INSIDE_DOCKER),)
 
 .PHONY: all clang clang-format python clean help
-all: build/clang build/clang-format 
+all: clang wasm-ld
 
 clang: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
 clang-format: .target/docker
+	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
+wasm-ld: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
 python: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
@@ -52,25 +54,42 @@ help:
 
 else # following targets are run inside docker
 
-clang: configure/llvm
-	@cd build/llvm && ninja -v clang
+clang-install: 
+	@cd build/llvm && ninja -v install
 	@mkdir -p out
-	@cp build/llvm/bin/clang.js out/clang.js
+
+clang: out/clang.wasm
+out/clang.wasm: .target/configure/llvm
+	@cd build/llvm && ninja -v clang 
+	@mkdir -p out
+	@$(WRAP_JS) build/llvm/bin/clang.js out/clang.js
 	@cp build/llvm/bin/clang.wasm out/clang.wasm
 
-clang-format: configure/llvm
+clang-format: out/clang-format.wasm
+out/clang-format.wasm: .target/configure/llvm
 	@cd build/llvm && ninja -v clang-format
 	@mkdir -p out
 	@cp build/llvm/bin/clang-format.js out/clang-format.js
 	@cp build/llvm/bin/clang-format.wasm out/clang-format.wasm
+
+wasm-ld: out/lld.wasm
+out/lld.wasm: .target/configure/llvm
+	@cd build/llvm && ninja -v lld 
+	@mkdir -p out
+	@$(WRAP_JS) build/llvm/bin/wasm-ld.js out/wasm-ld.js
+	@cp build/llvm/bin/lld.wasm out/lld.wasm
+
 
 configure/llvm: .target/configure/llvm
 .target/configure/llvm: Makefile .target/upstream/llvm-project
 	@echo "Configuring LLVM..."
 	@mkdir -p build/llvm
 	@CXXFLAGS="-Dwait4=__syscall_wait4" \
+	EMCC_DEBUG=1 \
 	LDFLAGS="\
 		-s ALLOW_MEMORY_GROWTH=1 \
+		-s INVOKE_RUN=0 -s EXIT_RUNTIME=0 \
+		-s ASSERTIONS=1 \
 		-s EXPORTED_FUNCTIONS=_main,_free,_malloc \
 		-s EXPORTED_RUNTIME_METHODS=FS,PROXYFS,ERRNO_CODES,allocateUTF8,ccall,cwrap \
 		-lproxyfs.js \
@@ -79,15 +98,15 @@ configure/llvm: .target/configure/llvm
 		-B build/llvm \
 		-S upstream/${LLVM}/llvm \
 		-DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
-		-DLLVM_ENABLE_ASSERTIONS=ON \
+		-DLLVM_ENABLE_ASSERTIONS=OFF \
 		-DBUILD_SHARED_LIBS=OFF \
-		-DLLVM_INCLUDE_TESTS=ON \
-		-DLLVM_BUILD_TESTS=ON \
+		-DLLVM_INCLUDE_TESTS=OFF \
+		-DLLVM_BUILD_TESTS=OFF \
 		-DLLVM_OPTIMIZED_TABLEGEN=ON \
 		-DLLVM_TARGETS_TO_BUILD="WebAssembly" \
 		-DLLVM_ENABLE_RTTI=ON \
-		-DLLVM_ENABLE_PROJECTS="clang" \
-		-DCMAKE_INSTALL_PREFIX=install \
+		-DLLVM_ENABLE_PROJECTS="clang;lld;clang-tools-extra" \
+		-DCMAKE_INSTALL_PREFIX=$(SRC)/install/llvm \
 		-DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
 		-DCMAKE_TOOLCHAIN_FILE=${EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake && \
 		mkdir -p .target/configure && touch .target/configure/llvm

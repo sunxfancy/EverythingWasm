@@ -21,19 +21,38 @@
     <div id="editor" style="width: 60%; height: 100%; display:inline-block;"></div>
     <div id="terminal" style="width: 40%; height: 100%; display:inline-block; background-color: bisque;">
         <button type="button" id="compile-btn">compile</button>
+        <div id="output"></div>
+        <div id="execution"></div>
     </div>
 </body>
 
-<script>
+<script type="module">
+const example = 
+`
+extern int printf(const char *format, ...);
+
+int main() {
+    printf("Hello, world!\\n");
+    return 0;
+}
+`;
+
     var stdout = '';
     var stderr = '';
-    var Module = {
+
+    import Clang from './out/clang.js';
+    import LLD from './out/wasm-ld.js';
+
+    var ClangModule = new Clang({
         noInitialRun: true,
+        noExitRuntime: false,
         preRun: function () {
             console.log('pre-run');
             function on_stdin() {
                 console.log('read from stdin');
-                return getValueFromEditor();
+                var v = getValueFromEditor();
+                console.log(v);
+                return v;
             }
 
             function on_stdout(code) {
@@ -44,19 +63,32 @@
                 stderr += String.fromCharCode(code);
             }
 
-            FS.init(on_stdin, on_stdout, on_stderr);
+            ClangModule.FS.init(on_stdin, on_stdout, on_stderr);
         }
-    };
-</script>
-<script src="./out/clang.js"></script>
-<script type="module">
-const example = 
-`
-int main() {
-    printf("Hello, world!\\n");
-    return 0;
-}
-`;
+    });
+    var LLDModule = new LLD({
+        noInitialRun: true,
+        noExitRuntime: false,
+        preRun: function () {
+            console.log('pre-run');
+            function on_stdin() {
+                console.log('read from stdin');
+                var v = getValueFromEditor();
+                console.log(v);
+                return v;
+            }
+
+            function on_stdout(code) {
+                stdout += String.fromCharCode(code);
+            }
+
+            function on_stderr(code) {
+                stderr += String.fromCharCode(code);
+            }
+
+            LLDModule.FS.init(on_stdin, on_stdout, on_stderr);
+        }
+    });
 
     import * as monaco from 'https://cdn.jsdelivr.net/npm/monaco-editor@0.50.0/+esm';
     var container = document.getElementById('editor');
@@ -69,16 +101,10 @@ int main() {
         return editor.getValue();
     }
     
-    function compile() {
+    function callModule(Module, args) {
         var memory = Module.HEAPU8.slice();
         Module.HEAPU8.fill(0);
         Module.HEAPU8.set(memory);
-        stdout = '';
-        stderr = '';
-        var args = ['clang', '-o', 'out.wasm', 
-            '--target=wasm32', '-nostdlib', 
-            '-Wl,--no-entry', '-Wl,--export-all', '-Wl,--allow-undefined', 
-            '-Wl,--lto-O3', '-Wl,--strip-all', '-x', 'c', '-', '-###'];
 
         const argc = args.length;
         const argv = Module._malloc((argc + 1) * 4);
@@ -88,13 +114,58 @@ int main() {
             allocs.push(p);
         }
         Module.HEAP32[(argv >> 2) + argc] = 0;
-
         Module._main(argc, argv);
-        console.log(stdout);
-        console.log(stderr);
     }
 
-    Module.onRuntimeInitialized = async _ => {
+    function compile() {
+        stdout = '';
+        stderr = '';
+        globalThis.FS = ClangModule.FS;
+
+        ClangModule.FS.mkdir('/bin');
+        ClangModule.FS.writeFile('/bin/clang', "x");
+        ClangModule.FS.writeFile('/proc/self/exe', '/bin/clang');
+        ClangModule.FS.chdir('/bin');
+        var content = getValueFromEditor();
+        console.log(content);
+        ClangModule.FS.writeFile('/tmp/input.c', content);
+
+        var args = ['/bin/clang', "-cc1", "-triple", "wasm32", "-emit-obj", 
+            "-mrelax-all", "-dumpdir", "a-", "-disable-free", "-clear-ast-before-backend", 
+            "-main-file-name", "-", "-mrelocation-model", "static", "-mframe-pointer=none", 
+            "-ffp-contract=on", "-fno-rounding-math", "-mconstructor-aliases", "-target-cpu", 
+            "generic", "-fvisibility=hidden", "-debugger-tuning=gdb", "-fdebug-compilation-dir=/bin", 
+            "-fcoverage-compilation-dir=/bin", "-resource-dir", "lib/clang/18", "-internal-isystem", 
+            "lib/clang/18/include", "-internal-isystem", "/include", "-ferror-limit", "19", 
+            "-fgnuc-version=4.2.1", "-fskip-odr-check-in-gmf", "-o", "/tmp/out.o", "-x", "c", "/tmp/input.c"];
+
+        callModule(ClangModule, args);
+        console.log(stdout);
+        console.log(stderr);
+        // args = ['/bin/wasm-ld', '--version'];
+        args = ['/bin/wasm-ld', '--no-entry', '--export-dynamic', '--allow-undefined', '/tmp/out.o', 
+                '-o', '/tmp/out.wasm'];
+        
+        LLDModule.FS.writeFile('/tmp/out.o', ClangModule.FS.readFile('/tmp/out.o'));
+        try {
+            callModule(LLDModule, args);
+        } catch (e) {
+            console.log(e);
+        }
+        console.log(stdout);
+        console.log(stderr);
+        // var compiledProgram = LLDModule.FS.readFile('/tmp/out.wasm');
+
+        var outEl = document.getElementById('output');
+        outEl.innerHTML = "<pre>stdout: \n" + stdout + "</pre>" + "<pre>stderr: \n" + stderr + "</pre>";
+    }
+
+    function run() {
+
+    }
+
+
+    ClangModule.onRuntimeInitialized = async _ => {
         console.log('clang is ready');
         document.getElementById('compile-btn').addEventListener('click', compile);
     };
