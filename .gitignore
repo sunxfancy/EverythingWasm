@@ -1,6 +1,7 @@
 out/
 build/
 upstream/
+debug/
 .vscode/
 .target/
 

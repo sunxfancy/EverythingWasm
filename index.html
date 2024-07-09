@@ -41,7 +41,7 @@ int main() {
     var stderr = '';
 
     import Clang from './out/clang.js';
-    import LLD from './out/wasm-ld.js';
+    import LLD from './wasm-ld.js';
 
     var ClangModule = new Clang({
         noInitialRun: true,
@@ -116,7 +116,7 @@ int main() {
         Module.HEAP32[(argv >> 2) + argc] = 0;
         Module._main(argc, argv);
     }
-
+    var compiledProgram;
     function compile() {
         stdout = '';
         stderr = '';
@@ -143,10 +143,16 @@ int main() {
         console.log(stdout);
         console.log(stderr);
         // args = ['/bin/wasm-ld', '--version'];
-        args = ['/bin/wasm-ld', '--no-entry', '--export-dynamic', '--allow-undefined', '/tmp/out.o', 
+        // --threads=1 is required to avoid threading issues
+        args = ['/bin/wasm-ld', '--no-entry', '--threads=1', '/tmp/out.o', 
                 '-o', '/tmp/out.wasm'];
-        
-        LLDModule.FS.writeFile('/tmp/out.o', ClangModule.FS.readFile('/tmp/out.o'));
+        var data = ClangModule.FS.readFile('/tmp/out.o');
+        var stream = LLDModule.FS.open('/tmp/out.o', 'w+');
+        console.log(data);
+        console.log(stream);
+        LLDModule.FS.write(stream, data, 0, data.length, 0);
+        LLDModule.FS.close(stream);
+        console.log(LLDModule.FS.readFile('/tmp/out.o'));
         try {
             callModule(LLDModule, args);
         } catch (e) {
@@ -154,10 +160,12 @@ int main() {
         }
         console.log(stdout);
         console.log(stderr);
-        // var compiledProgram = LLDModule.FS.readFile('/tmp/out.wasm');
+        compiledProgram = LLDModule.FS.readFile('/tmp/out.wasm');
 
         var outEl = document.getElementById('output');
         outEl.innerHTML = "<pre>stdout: \n" + stdout + "</pre>" + "<pre>stderr: \n" + stderr + "</pre>";
+
+        console.log(compiledProgram);
     }
 
     function run() {
@@ -168,6 +176,10 @@ int main() {
     ClangModule.onRuntimeInitialized = async _ => {
         console.log('clang is ready');
         document.getElementById('compile-btn').addEventListener('click', compile);
+    };
+
+    LLDModule.onRuntimeInitialized = async _ => {
+        console.log('lld is ready');
     };
 </script>
 </html>

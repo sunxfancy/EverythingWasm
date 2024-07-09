@@ -3,7 +3,6 @@ PYTHON_VERSION=3.12.4
 PYTHON=Python-$(PYTHON_VERSION)
 BROTLI=brotli-1.1.0
 
-BUILD_TYPE=Release
 PWD=$(shell pwd)
 gen_linker_flags=-DCMAKE_EXE_LINKER_FLAGS="$(1)" -DCMAKE_SHARED_LINKER_FLAGS="$(1)" -DCMAKE_MODULE_LINKER_FLAGS="$(1)"
 COMMA=,
@@ -22,6 +21,8 @@ clang: .target/docker
 clang-format: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
 wasm-ld: .target/docker
+	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
+wasm-ld-debug: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
 python: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
@@ -60,17 +61,14 @@ help:
 
 else # following targets are run inside docker
 
-export EMCC_DEBUG=1
-export CXXFLAGS=-Dwait4=__syscall_wait4
-export LDFLAGS=\
-		-s ALLOW_MEMORY_GROWTH=1 \
+LDFLAGS:=-s ALLOW_MEMORY_GROWTH=1 \
 		-s INVOKE_RUN=0 -s EXIT_RUNTIME=0 \
 		-s ASSERTIONS=1 \
 		-s EXPORTED_FUNCTIONS=_main,_free,_malloc \
 		-s EXPORTED_RUNTIME_METHODS=FS,PROXYFS,ERRNO_CODES,allocateUTF8,ccall,cwrap \
 		-lproxyfs.js \
-        --js-library=$(SRC)/emlib/fsroot.js \
-
+        --js-library=$(SRC)/emlib/fsroot.js
+	
 
 clang-install: 
 	@cd build/llvm && ninja -v install
@@ -102,10 +100,18 @@ configure/llvm: .target/configure/llvm
 .target/configure/llvm: Makefile .target/upstream/llvm-project
 	@echo "Configuring LLVM..."
 	@mkdir -p build/llvm
-	@emcmake cmake -G Ninja \
+	@CXXFLAGS=-Dwait4=__syscall_wait4 \
+	LDFLAGS=-s ALLOW_MEMORY_GROWTH=1 \
+		-s INVOKE_RUN=0 -s EXIT_RUNTIME=0 \
+		-s ASSERTIONS=1 \
+		-s EXPORTED_FUNCTIONS=_main,_free,_malloc \
+		-s EXPORTED_RUNTIME_METHODS=FS,PROXYFS,ERRNO_CODES,allocateUTF8,ccall,cwrap \
+		-lproxyfs.js \
+        --js-library=$(SRC)/emlib/fsroot.js \
+	emcmake cmake -G Ninja \
 		-B build/llvm \
 		-S upstream/${LLVM}/llvm \
-		-DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+		-DCMAKE_BUILD_TYPE=Release \
 		-DLLVM_ENABLE_ASSERTIONS=OFF \
 		-DBUILD_SHARED_LIBS=OFF \
 		-DLLVM_INCLUDE_TESTS=OFF \
@@ -118,6 +124,45 @@ configure/llvm: .target/configure/llvm
 		-DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
 		-DCMAKE_TOOLCHAIN_FILE=${EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake && \
 		mkdir -p .target/configure && touch .target/configure/llvm
+
+
+wasm-ld-debug: debug/lld.wasm
+debug/lld.wasm: .target/configure/llvm-debug
+	@cd build/llvm-debug && ninja -v lld 
+	@mkdir -p debug
+	@$(WRAP_JS) build/llvm-debug/bin/wasm-ld.js debug/wasm-ld.js
+	@cp build/llvm-debug/bin/lld.wasm debug/lld.wasm
+
+
+configure/llvm-debug: .target/configure/llvm-debug
+.target/configure/llvm-debug: Makefile .target/upstream/llvm-project
+	@echo "Configuring LLVM..."
+	@mkdir -p build/llvm-debug
+	@CXXFLAGS="-Dwait4=__syscall_wait4" \
+	LDFLAGS="-s ALLOW_MEMORY_GROWTH=1 \
+		-s INVOKE_RUN=0 -s EXIT_RUNTIME=0 \
+		-s ASSERTIONS=1 \
+		-s EXPORTED_FUNCTIONS=_main,_free,_malloc \
+		-s EXPORTED_RUNTIME_METHODS=FS,PROXYFS,ERRNO_CODES,allocateUTF8,ccall,cwrap \
+		-lproxyfs.js \
+        --js-library=$(SRC)/emlib/fsroot.js \
+	" emcmake cmake -G Ninja \
+		-B build/llvm-debug \
+		-S upstream/${LLVM}/llvm \
+		-DCMAKE_BUILD_TYPE=Debug \
+		-DLLVM_ENABLE_ASSERTIONS=OFF \
+		-DBUILD_SHARED_LIBS=OFF \
+		-DLLVM_INCLUDE_TESTS=OFF \
+		-DLLVM_BUILD_TESTS=OFF \
+		-DLLVM_OPTIMIZED_TABLEGEN=ON \
+		-DLLVM_TARGETS_TO_BUILD="WebAssembly" \
+		-DLLVM_ENABLE_RTTI=ON \
+		-DLLVM_ENABLE_PROJECTS="clang;lld;clang-tools-extra" \
+		-DCMAKE_INSTALL_PREFIX=$(SRC)/install/llvm-debug \
+		-DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
+		-DCMAKE_TOOLCHAIN_FILE=${EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake && \
+		mkdir -p .target/configure && touch .target/configure/llvm-debug
+
 
 python-native: .target/build/python-native
 .target/build/python-native: .target/configure/python-native
@@ -145,7 +190,15 @@ configure/python: .target/configure/python
 	@echo "Configuring Python..."
 	cp -r upstream/$(PYTHON) build/python
 	cd build/python/ && \
-	CONFIG_SITE=$(SRC)/build/python/Tools/wasm/config.site-wasm32-emscripten \
+	CXXFLAGS="-Dwait4=__syscall_wait4" \
+	LDFLAGS="-s ALLOW_MEMORY_GROWTH=1 \
+		-s INVOKE_RUN=0 -s EXIT_RUNTIME=0 \
+		-s ASSERTIONS=1 \
+		-s EXPORTED_FUNCTIONS=_main,_free,_malloc \
+		-s EXPORTED_RUNTIME_METHODS=FS,PROXYFS,ERRNO_CODES,allocateUTF8,ccall,cwrap \
+		-lproxyfs.js \
+        --js-library=$(SRC)/emlib/fsroot.js \
+	" CONFIG_SITE=$(SRC)/build/python/Tools/wasm/config.site-wasm32-emscripten \
 	LIBSQLITE3_CFLAGS=" " \
 	BZIP2_CFLAGS=" " \
 	emconfigure $(SRC)/build/python/configure -C \
@@ -184,7 +237,7 @@ brotli: .target/build/brotli
 
 configure/brotli: .target/configure/brotli
 .target/configure/brotli: Makefile .target/upstream/brotli
-	@emcmake cmake -G Ninja \
+	@$(FLAGS) emcmake cmake -G Ninja \
 		-B build/brotli \
 		-S upstream/$(BROTLI) \
 		-DCMAKE_BUILD_TYPE=Release
@@ -193,7 +246,7 @@ configure/brotli: .target/configure/brotli
 wasm-package: .target/build/wasm-package
 .target/build/wasm-package: Makefile
 	c++ -std=c++20 -o out/wasm-package $(SRC)/tooling/wasm-package/wasm-package.cpp $(SRC)/tooling/wasm-utils/*.cpp
-	em++ -std=c++20 ${LDFLAGS} -o out/wasm-package.js $(SRC)/tooling/wasm-package/wasm-package.cpp $(SRC)/tooling/wasm-utils/*.cpp
+	em++ -std=c++20 $(LDFLAGS) -o out/wasm-package.js $(SRC)/tooling/wasm-package/wasm-package.cpp $(SRC)/tooling/wasm-utils/*.cpp
 
 
 upstream/llvm-project: .target/upstream/llvm-project
