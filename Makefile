@@ -27,6 +27,10 @@ python: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
 brotli: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
+brotli-native: .target/docker
+	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
+wasm-package: .target/docker
+	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
 configure/%: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
 upstream/%:  .target/docker
@@ -155,6 +159,21 @@ configure/python: .target/configure/python
 		--with-build-python=$(SRC)/build/python-native/python
 	mkdir -p .target/configure && touch .target/configure/python
 
+brotli-native: .target/build/brotli-native
+.target/build/brotli-native: .target/configure/brotli-native
+	@cd build/brotli-native && ninja -v
+	@mkdir -p out
+	@cp build/brotli-native/brotli out/brotli
+	mkdir -p .target/build && touch .target/build/brotli-native
+
+configure/brotli-native: .target/configure/brotli-native
+.target/configure/brotli-native: Makefile .target/upstream/brotli
+	/usr/bin/cmake -G Ninja \
+		-B build/brotli-native \
+		-S upstream/$(BROTLI) \
+		-DCMAKE_BUILD_TYPE=Release
+	mkdir -p .target/configure && touch .target/configure/brotli-native
+
 brotli: .target/build/brotli
 .target/build/brotli: .target/configure/brotli
 	@cd build/brotli && ninja -v
@@ -170,6 +189,12 @@ configure/brotli: .target/configure/brotli
 		-S upstream/$(BROTLI) \
 		-DCMAKE_BUILD_TYPE=Release
 	mkdir -p .target/configure && touch .target/configure/brotli
+
+wasm-package: .target/build/wasm-package
+.target/build/wasm-package: Makefile
+	c++ -std=c++20 -o out/wasm-package $(SRC)/tooling/wasm-package/wasm-package.cpp $(SRC)/tooling/wasm-utils/*.cpp
+	em++ -std=c++20 ${LDFLAGS} -o out/wasm-package.js $(SRC)/tooling/wasm-package/wasm-package.cpp $(SRC)/tooling/wasm-utils/*.cpp
+
 
 upstream/llvm-project: .target/upstream/llvm-project
 .target/upstream/llvm-project:  
