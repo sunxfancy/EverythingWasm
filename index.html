@@ -144,7 +144,7 @@ int main() {
         console.log(stderr);
         // args = ['/bin/wasm-ld', '--version'];
         // --threads=1 is required to avoid threading issues
-        args = ['/bin/wasm-ld', '--no-entry', '--threads=1', '/tmp/out.o', 
+        args = ['/bin/wasm-ld', '--export-all', '--no-entry', '--threads=1', '/tmp/out.o', 
                 '-o', '/tmp/out.wasm'];
         var data = ClangModule.FS.readFile('/tmp/out.o');
         var stream = LLDModule.FS.open('/tmp/out.o', 'w+');
@@ -166,6 +166,13 @@ int main() {
         outEl.innerHTML = "<pre>stdout: \n" + stdout + "</pre>" + "<pre>stderr: \n" + stderr + "</pre>";
 
         console.log(compiledProgram);
+
+
+        WebAssembly.instantiate(compiledProgram).then(result => {
+            console.log(result);
+            var instance = result.instance;
+            console.log(instance.exports.main());
+        });
     }
 
     function run() {

@@ -6,3 +6,5 @@ debug/
 .target/
 
 *.wasm
+clang*
+wasm-ld*

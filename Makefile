@@ -278,5 +278,17 @@ upstream/brotli: .target/upstream/brotli
 		&& rm -f v1.1.0.tar.gz
 	@mkdir -p .target/upstream && touch .target/upstream/brotli
 
+upstream/wasi: .target/upstream/wasi
+.target/upstream/wasi: 
+	@echo "Downloading WASI..."
+	@mkdir -p upstream
+	@cd upstream && wget -c https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-23/wasi-sysroot-23.0.tar.gz \
+		&& tar -xvf wasi-sysroot-23.0.tar.gz \
+		&& rm -f wasi-sysroot-23.0.tar.gz
+	@cd upstream && wget -c https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-23/libclang_rt.builtins-wasm32-wasi-23.0.tar.gz \
+		&& tar -xvf libclang_rt.builtins-wasm32-wasi-23.0.tar.gz \
+		&& rm -f libclang_rt.builtins-wasm32-wasi-23.0.tar.gz
+	@mkdir -p .target/upstream && touch .target/upstream/wasi
+	
 
 endif
