@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <iostream>
+#include <filesystem>
 
 #include "../wasm-utils/WasmBuffer.hpp"
 #include "../wasm-utils/utils.hpp"
@@ -14,7 +15,7 @@
 using namespace wasm_transform;
 
 int usage() {
-    std::cerr << "Usage: wasm-package (pack|unpack) archive [file1 file2 ...]\n";
+    std::cerr << "Usage: wasm-package (pack|unpack) archive [file1 dir2 ...]\n";
     return 1;
 }
 
@@ -42,6 +43,35 @@ std::string read_link(std::string const & path) {
     return buf;
 }
 
+static void packFile(WasmBuffer& buffer, std::string name) {
+    std::cout << "Packing " << name << " ... \n";
+
+    struct stat status;
+    if (lstat(name.c_str(), &status) == 0) {
+        buffer.write<std::string_view>(name);
+        buffer.write<std::uint64_t>(status.st_mode);
+        buffer.write<std::uint64_t>(status.st_atim.tv_sec);
+        buffer.write<std::uint64_t>(status.st_mtim.tv_sec);
+
+        switch (status.st_mode & S_IFMT) {
+            case S_IFREG: // normal file
+                buffer.write(readFile(name));
+                break;
+            case S_IFLNK: // symlink
+                buffer.write(read_link(name));
+                break;
+            case S_IFDIR: // directory
+                // write an empty string to keep things symmetric
+                buffer.write<std::string_view>("");
+                break;
+            default: // something else: block/char device, FIFO/pipe, socket, ...
+                std::cerr << "Skipping node at \"" << name << "\": unsupported node type.\n";
+        }
+    } else {
+        std::cerr << "Skipping node at \"" << name << "\": error stating node.\n";
+    }
+}
+
 int main(int argc, const char *argv[]) {
     if (argc < 3) return usage();
     
@@ -54,29 +84,12 @@ int main(int argc, const char *argv[]) {
         for (int i=3; i<argc; i++) {
             auto name = argv[i];
 
-            struct stat status;
-            if (lstat(name, &status) == 0) {
-                buffer.write<std::string_view>(name);
-                buffer.write<std::uint64_t>(status.st_mode);
-                buffer.write<std::uint64_t>(status.st_atim.tv_sec);
-                buffer.write<std::uint64_t>(status.st_mtim.tv_sec);
-
-                switch (status.st_mode & S_IFMT) {
-                    case S_IFREG: // normal file
-                        buffer.write(readFile(name));
-                        break;
-                    case S_IFLNK: // symlink
-                        buffer.write(read_link(name));
-                        break;
-                    case S_IFDIR: // directory
-                        // write an empty string to keep things symmetric
-                        buffer.write<std::string_view>("");
-                        break;
-                    default: // something else: block/char device, FIFO/pipe, socket, ...
-                        std::cerr << "Skipping node at \"" << name << "\": unsupported node type.\n";
+            if (std::filesystem::is_directory(std::filesystem::path(name))) {
+                for (const auto & entry : std::filesystem::recursive_directory_iterator(name)) {
+                    packFile(buffer, entry.path().string());
                 }
             } else {
-                std::cerr << "Skipping node at \"" << name << "\": error stating node.\n";
+                packFile(buffer, name);
             }
         }
 

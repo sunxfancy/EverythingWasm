@@ -36,6 +36,8 @@ configure/%: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
 upstream/%:  .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
+pack/%:  .target/docker
+	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
 
 .target/docker: Dockerfile
 	@docker build -t everything_wasm .
@@ -244,10 +246,10 @@ configure/brotli: .target/configure/brotli
 	mkdir -p .target/configure && touch .target/configure/brotli
 
 wasm-package: .target/build/wasm-package
-.target/build/wasm-package: Makefile
+.target/build/wasm-package:
 	c++ -std=c++20 -o out/wasm-package $(SRC)/tooling/wasm-package/wasm-package.cpp $(SRC)/tooling/wasm-utils/*.cpp
 	em++ -std=c++20 $(LDFLAGS) -o out/wasm-package.js $(SRC)/tooling/wasm-package/wasm-package.cpp $(SRC)/tooling/wasm-utils/*.cpp
-
+	mkdir -p .target/build && touch .target/build/wasm-package
 
 upstream/llvm-project: .target/upstream/llvm-project
 .target/upstream/llvm-project:  
@@ -290,5 +292,13 @@ upstream/wasi: .target/upstream/wasi
 		&& rm -f libclang_rt.builtins-wasm32-wasi-23.0.tar.gz
 	@mkdir -p .target/upstream && touch .target/upstream/wasi
 	
+
+pack/wasi: .target/pack/wasi
+.target/pack/wasi: .target/upstream/wasi .target/build/wasm-package
+	@echo "Packing WASI..."
+	@mkdir -p out
+	@cd upstream && ../out/wasm-package pack ../out/wasi.pack ./wasi-sysroot ./lib
+	@out/brotli -q 11 -o out/wasi.pack.br out/wasi.pack
+	@mkdir -p .target/pack && touch .target/pack/wasi
 
 endif
