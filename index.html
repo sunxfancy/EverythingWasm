@@ -28,10 +28,10 @@
 <script type="module">
 const example = 
 `
-extern "C" int printf(const char *format, ...);
+#include <iostream>
 
 int main() {
-    printf("Hello, world!\\n");
+    std::cout << "Hello C++!" << std::endl;
     return 0;
 }
 `;
@@ -97,7 +97,7 @@ int main() {
                                 "generic",
                                 "-fvisibility=hidden",
                                 "-resource-dir",
-                                "/",
+                                "/lib/clang/18",
                                 "-isysroot",
                                 "/wasi-sysroot",
                                 "-internal-isystem",
@@ -110,6 +110,8 @@ int main() {
                                 "/wasi-sysroot/include/wasm32-wasi",
                                 "-internal-isystem",
                                 "/wasi-sysroot/include",
+                                "-internal-isystem",
+                                "/lib/clang/18/include",
                                 "-fdeprecated-macro",
                                 "-ferror-limit",
                                 "19",
@@ -133,7 +135,7 @@ int main() {
                             "-lc++",
                             "-lc++abi",
                             "-lc",
-                            "/lib/wasi/libclang_rt.builtins-wasm32.a",
+                            "/lib/clang/18/lib/wasi/libclang_rt.builtins-wasm32.a",
                             "--export-all", 
                             "--threads=1",
                             "-o",

@@ -297,12 +297,9 @@ upstream/wasi: .target/upstream/wasi
 .target/upstream/wasi: 
 	@echo "Downloading WASI..."
 	@mkdir -p upstream
-	@cd upstream && wget -c https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-23/wasi-sysroot-23.0.tar.gz \
-		&& tar -xvf wasi-sysroot-23.0.tar.gz \
-		&& rm -f wasi-sysroot-23.0.tar.gz
-	@cd upstream && wget -c https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-23/libclang_rt.builtins-wasm32-wasi-23.0.tar.gz \
-		&& tar -xvf libclang_rt.builtins-wasm32-wasi-23.0.tar.gz \
-		&& rm -f libclang_rt.builtins-wasm32-wasi-23.0.tar.gz
+	@cd upstream && wget -c https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-23/wasi-sdk-23.0-linux.tar.gz \
+		&& tar -xvf wasi-sdk-23.0-linux.tar.gz \
+		&& rm -f wasi-sdk-23.0-linux.tar.gz
 	@mkdir -p .target/upstream && touch .target/upstream/wasi
 	
 
@@ -310,8 +307,11 @@ pack/wasi: .target/pack/wasi
 .target/pack/wasi: .target/upstream/wasi .target/build/wasm-package
 	@echo "Packing WASI..."
 	@mkdir -p out
-	@cd upstream && ../out/wasm-package pack ../out/wasi.pack ./wasi-sysroot ./lib
-	@out/brotli -q 11 -o out/wasi.pack.br out/wasi.pack
+	@rm -rf out/lib/ out/wasi-sysroot/
+	@cp -r upstream/wasi-sdk-23.0/share/wasi-sysroot out/wasi-sysroot
+	@cp -r upstream/wasi-sdk-23.0/lib out/lib
+	@cd out && rm -rf ../out/wasi.pack && ../out/wasm-package pack ../out/wasi.pack ./wasi-sysroot ./lib
+	@rm -rf out/wasi.pack.br && out/brotli -q 11 -o out/wasi.pack.br out/wasi.pack
 	@mkdir -p .target/pack && touch .target/pack/wasi
 
 endif
