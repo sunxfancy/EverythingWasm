@@ -29,7 +29,7 @@
 <script type="module">
 const example = 
 `
-extern int printf(const char *format, ...);
+extern "C" int printf(const char *format, ...);
 
 int main() {
     printf("Hello, world!\\n");
@@ -47,6 +47,7 @@ int main() {
 
     import FileSystem from './src/FileSystem.mjs';
     import ClangProcess from './src/ClangProcess.mjs';
+    import WasmLDProcess from './src/WasmLDProcess.mjs';
 
     function getValueFromEditor() {
         return editor.getValue();
@@ -54,8 +55,10 @@ int main() {
 
     const sharedFileSystem = await new FileSystem();
     globalThis.FS = sharedFileSystem.FS;
+    const clang = new ClangProcess({ FS: sharedFileSystem.FS});
+    const lld = new WasmLDProcess({ FS: sharedFileSystem.FS});
 
-    async function compile() {
+    async function init() {
         // write the content to a file
         let data = await fetch('./out/wasi.pack.br');
         let buffer = await data.arrayBuffer();
@@ -67,7 +70,103 @@ int main() {
         sharedFileSystem.dump('/');
     }
 
+    async function compile() {
+        var content = getValueFromEditor();
+        FS.writeFile('/tmp/main.cpp', content);
+
+        let ret1 = clang.exec(["/bin/clang",
+                                "-cc1",
+                                "-triple",
+                                "wasm32-unknown-wasi",
+                                "-emit-obj",
+                                "-mrelax-all",
+                                "-disable-free",
+                                "-clear-ast-before-backend",
+                                "-disable-llvm-verifier",
+                                "-discard-value-names",
+                                "-main-file-name",
+                                "main.cpp",
+                                "-mrelocation-model",
+                                "static",
+                                "-mframe-pointer=none",
+                                "-ffp-contract=on",
+                                "-fno-rounding-math",
+                                "-mconstructor-aliases",
+                                "-target-cpu",
+                                "generic",
+                                "-fvisibility=hidden",
+                                "-resource-dir",
+                                "/",
+                                "-isysroot",
+                                "/wasi-sysroot",
+                                "-internal-isystem",
+                                "/wasi-sysroot/include/wasm32-wasi/c++/v1",
+                                "-internal-isystem",
+                                "/wasi-sysroot/include/c++/v1",
+                                "-internal-isystem",
+                                "/include",
+                                "-internal-isystem",
+                                "/wasi-sysroot/include/wasm32-wasi",
+                                "-internal-isystem",
+                                "/wasi-sysroot/include",
+                                "-fdeprecated-macro",
+                                "-ferror-limit",
+                                "19",
+                                "-fgnuc-version=4.2.1",
+                                "-fskip-odr-check-in-gmf",
+                                "-o",
+                                "/tmp/main.o",
+                                "-x",
+                                "c++",
+                                "/tmp/main.cpp" ], 
+                                { cwd: "/" });
+
+        console.log(ret1);
+
+        let ret2 = lld.exec(["wasm-ld",
+                            "-m",
+                            "wasm32",
+                            "-L/wasi-sysroot/lib/wasm32-wasi",
+                            "/wasi-sysroot/lib/wasm32-wasi/crt1-command.o",
+                            "/tmp/main.o",
+                            "-lc++",
+                            "-lc++abi",
+                            "-lc",
+                            "/lib/wasi/libclang_rt.builtins-wasm32.a",
+                            "--export-all", 
+                            "--threads=1",
+                            "-o",
+                            "/tmp/out.wasm" ], 
+                            { cwd: "/" });
+        console.log(ret2);
+
+        sharedFileSystem.dump('/');
+        let compiledProgram = FS.readFile('/tmp/out.wasm');
+
+        let imports = {}
+        imports.env = imports.env || {}
+
+        Object.assign(imports.env, {
+            table: new WebAssembly.Table({
+                initial: 4,
+                element: 'anyfunc',
+            }),
+            print:function(msg){
+                console.log(msg);
+            }
+        });
+
+        WebAssembly.instantiate(compiledProgram, imports).then(result => {
+            console.log(result);
+            var instance = result.instance;
+            console.log(instance.exports.main());
+        });
+
+    }
+
     document.getElementById('compile-btn').addEventListener('click', compile);
+    init();
+
 </script>
 </html>
 
