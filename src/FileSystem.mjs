@@ -1,5 +1,5 @@
 import EmProcess from "./EmProcess.mjs";
-import WasmPackageModule from "./wasm-package/wasm-package.mjs";
+import WasmPackageModule from "../out/wasm-package.mjs";
 import createLazyFolder, { doFetch } from "./createLazyFolder.mjs"
 import Thenable from "./Thenable.mjs";
 import BrotliProcess from "./BrotliProcess.mjs";
@@ -9,6 +9,7 @@ export default class FileSystem extends EmProcess {
     _cache = null;
 
     constructor({ cache = "/cache", ...opts } = {}) {
+        console.log("WasmPackage.constructor");
         super(WasmPackageModule, { ...opts });
         this.init.push(this.#init.bind(this, cache, opts));
     }
@@ -28,9 +29,13 @@ export default class FileSystem extends EmProcess {
     unpack(path, cwd = "/") {
         if (path.endsWith(".br")) {
             // it's a brotli file, decompress it first
-            this._brotli.exec(["brotli", "--decompress", "-o", "/tmp/archive.pack", path], { cwd: "/tmp/" });
-            this.exec(["wasm-package", "unpack", "/tmp/archive.pack"], { cwd });
-            this.FS.unlink("/tmp/archive.pack");
+            let ret1 = this._brotli.exec(["brotli", "--decompress", "-o", "/tmp/archive.pack", path], { cwd: "/tmp/" });
+            console.log(ret1);
+            console.log(this._module.FS.readdir("/"));
+            console.log(this._module.FS.readdir("/tmp/"));
+            let ret2 = this.exec(["wasm-package", "unpack", "/tmp/archive.pack"], { cwd });
+            console.log(ret2);
+            // this.FS.unlink("/tmp/archive.pack");
         } else {
             this.exec(["wasm-package", "unpack", path], { cwd });
         }
@@ -123,6 +128,13 @@ export default class FileSystem extends EmProcess {
     }
     symlink(oldPath, newPath) {
         return this.FS.symlink(oldPath, newPath);
+    }
+
+    dump(path) {
+        console.log(`Path: ${path}`);
+        console.log(this.FS.readdir(path));
+        console.log(this.FS.readdir(path+"/tmp"));
+        console.log(this.FS.readdir(path+"/home"));
     }
 
     #pull = null;

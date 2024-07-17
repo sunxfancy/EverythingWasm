@@ -239,7 +239,14 @@ brotli: .target/build/brotli
 
 configure/brotli: .target/configure/brotli
 .target/configure/brotli: Makefile .target/upstream/brotli
-	@$(FLAGS) emcmake cmake -G Ninja \
+	@LDFLAGS="-s ALLOW_MEMORY_GROWTH=1 \
+		-s INVOKE_RUN=0 -s EXIT_RUNTIME=0 \
+		-s ASSERTIONS=1 \
+		-s EXPORTED_FUNCTIONS=_main,_free,_malloc \
+		-s EXPORTED_RUNTIME_METHODS=FS,PROXYFS,ERRNO_CODES,allocateUTF8,ccall,cwrap \
+		-lproxyfs.js \
+        --js-library=$(SRC)/emlib/fsroot.js \
+	" emcmake cmake -G Ninja \
 		-B build/brotli \
 		-S upstream/$(BROTLI) \
 		-DCMAKE_BUILD_TYPE=Release
@@ -248,7 +255,13 @@ configure/brotli: .target/configure/brotli
 wasm-package: .target/build/wasm-package
 .target/build/wasm-package:
 	c++ -std=c++20 -o out/wasm-package $(SRC)/tooling/wasm-package/wasm-package.cpp $(SRC)/tooling/wasm-utils/*.cpp
-	em++ -std=c++20 $(LDFLAGS) -o out/wasm-package.js $(SRC)/tooling/wasm-package/wasm-package.cpp $(SRC)/tooling/wasm-utils/*.cpp
+	em++ \
+		-std=c++20 \
+		$(LDFLAGS) \
+		-lidbfs.js \
+	   -o out/wasm-package.js \
+	   $(SRC)/tooling/wasm-package/wasm-package.cpp $(SRC)/tooling/wasm-utils/*.cpp
+	$(WRAP_JS) out/wasm-package.js out/wasm-package.mjs
 	mkdir -p .target/build && touch .target/build/wasm-package
 
 upstream/llvm-project: .target/upstream/llvm-project

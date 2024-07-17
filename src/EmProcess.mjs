@@ -24,6 +24,7 @@ export default class EmProcess extends AsyncInitializable(Process) {
     }
 
     async #init(Module, FS, opts) {
+        console.log(Module);
         const fsroot = FS && {
             ROOT: {
                 type: "PROXYFS",
@@ -41,20 +42,25 @@ export default class EmProcess extends AsyncInitializable(Process) {
             print: (...args) => this._print(...args),
             printErr: (...args) => this._printErr(...args),
         });
-        this._memory = this._module.HEAPU8.slice();
+        console.log(this._module);
+        this._module.onRuntimeInitialized = async _ => {
+            this._memory = this._module.HEAPU8.slice();
 
-        if (fsroot || opts.ROOT) {
-            // Do not cache nodes belonging to the PROXYFS mountpoint.
-            const hashAddNode = this._module.FS.hashAddNode;
-            this._module.FS.hashAddNode = (node) => {
-                if (node?.mount?.mountpoint === "/") return;
-                hashAddNode(node);
+            if (fsroot || opts.ROOT) {
+                // Do not cache nodes belonging to the PROXYFS mountpoint.
+                const hashAddNode = this._module.FS.hashAddNode;
+                this._module.FS.hashAddNode = (node) => {
+                    if (node?.mount?.mountpoint === "/") return;
+                    hashAddNode(node);
+                }
             }
-        }
 
-        this.#improveErrnoError();
+            // this.#improveErrnoError();
+            console.log("Runtime initialized");
+        }
     }
 
+    // BUGFIX: error code is applied to stat methods.
     #improveErrnoError() {
         const FS = this._module.FS;
         const ERRNO_CODES = Object.fromEntries(
@@ -137,6 +143,7 @@ export default class EmProcess extends AsyncInitializable(Process) {
             } else if ("status" in e) {
                 returncode = e.status;
             } else {
+                console.log(e);
                 returncode = -42;
             }
         } finally {
