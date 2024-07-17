@@ -25,7 +25,6 @@
         <div id="execution"></div>
     </div>
 </body>
-
 <script type="module">
 const example = 
 `
@@ -69,6 +68,8 @@ int main() {
         await sharedFileSystem.unpack("/wasi.pack.br");
         sharedFileSystem.dump('/');
     }
+
+    import { WASI, WASIWorkerHost } from './out/wasi.js';
 
     async function compile() {
         var content = getValueFromEditor();
@@ -141,27 +142,32 @@ int main() {
         console.log(ret2);
 
         sharedFileSystem.dump('/');
-        let compiledProgram = FS.readFile('/tmp/out.wasm');
+        let compiledProgram = await FS.readFile('/tmp/out.wasm');
+        console.log(compiledProgram);
 
-        let imports = {}
-        imports.env = imports.env || {}
+        let stdoutBuf = [];
 
-        Object.assign(imports.env, {
-            table: new WebAssembly.Table({
-                initial: 4,
-                element: 'anyfunc',
-            }),
-            print:function(msg){
-                console.log(msg);
-            }
+        // Instantiate a new WASI instance
+        const wasi = new WASI({
+            args: ["main"],
+            env: { SOME_KEY: "some value" },
+            stdout: (out) => stdoutBuf.push(out),
+            stderr: (err) => console.error("stderr", err),
         });
+        const myMemory = new WebAssembly.Memory({ initial: 32, maximum: 10000 });
 
-        WebAssembly.instantiate(compiledProgram, imports).then(result => {
-            console.log(result);
-            var instance = result.instance;
-            console.log(instance.exports.main());
+        // Then instantiate your binary with the imports provided by the wasi object
+        const wasm = await WebAssembly.instantiate(compiledProgram, {
+        ...wasi.getImportObject(),
+        env: {
+            memory: myMemory,
+        },
         });
+        const result = wasi.start(wasm);
 
+        console.log(result);
+        let output = stdoutBuf.join('\n');
+        document.getElementById('output').innerHTML = "<pre>stdout: \n" + output + "</pre>";
     }
 
     document.getElementById('compile-btn').addEventListener('click', compile);
