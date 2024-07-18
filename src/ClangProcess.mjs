@@ -14,10 +14,10 @@ import EmProcess from "./EmProcess.mjs";
 
 export default class ClangProcess extends EmProcess {
     constructor(opts) {
-        ClangModule["wasmMemory"] = new WebAssembly.Memory({
-            "initial" : 128,
-            "maximum" : 25600
-        });
+        // ClangModule["wasmMemory"] = new WebAssembly.Memory({
+        //     "initial" : 3200,
+        //     "maximum" : 25600
+        // });
         super(ClangModule, { ...opts });
     }
 };

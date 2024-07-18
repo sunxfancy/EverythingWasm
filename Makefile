@@ -18,6 +18,8 @@ all: clang wasm-ld
 
 clang: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
+clang-debug: .target/docker
+	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
 clang-format: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
 wasm-ld: .target/docker
@@ -83,6 +85,13 @@ out/clang.wasm: .target/configure/llvm
 	@$(WRAP_JS) build/llvm/bin/clang.js out/clang.js
 	@cp build/llvm/bin/clang.wasm out/clang.wasm
 
+clang-debug: debug/clang.wasm
+debug/clang.wasm: .target/configure/llvm-debug
+	@cd build/llvm-debug && ninja -v clang 
+	@mkdir -p debug
+	@$(WRAP_JS) build/llvm-debug/bin/clang.js debug/clang.js
+	@cp build/llvm-debug/bin/clang.wasm debug/clang.wasm
+
 clang-format: out/clang-format.wasm
 out/clang-format.wasm: .target/configure/llvm
 	@cd build/llvm && ninja -v clang-format
@@ -103,24 +112,31 @@ configure/llvm: .target/configure/llvm
 	@echo "Configuring LLVM..."
 	@mkdir -p build/llvm
 	@CXXFLAGS=-Dwait4=__syscall_wait4 \
-	LDFLAGS=-s ALLOW_MEMORY_GROWTH=1 \
+	LDFLAGS="-s ALLOW_MEMORY_GROWTH=1 \
+		-s ALLOW_TABLE_GROWTH=1 -s STACK_SIZE=2MB \
+		-s INITIAL_MEMORY=200MB -s MAXIMUM_MEMORY=1023MB \
 		-s INVOKE_RUN=0 -s EXIT_RUNTIME=0 \
 		-s ASSERTIONS=1 \
 		-s EXPORTED_FUNCTIONS=_main,_free,_malloc \
 		-s EXPORTED_RUNTIME_METHODS=FS,PROXYFS,ERRNO_CODES,allocateUTF8,ccall,cwrap \
 		-lproxyfs.js \
-        --js-library=$(SRC)/emlib/fsroot.js \
-	emcmake cmake -G Ninja \
+		--js-library=$(SRC)/emlib/fsroot.js \
+	" emcmake cmake -G Ninja \
 		-B build/llvm \
 		-S upstream/${LLVM}/llvm \
 		-DCMAKE_BUILD_TYPE=Release \
-		-DLLVM_ENABLE_ASSERTIONS=OFF \
+        -DLLVM_ENABLE_DUMP=OFF \
+        -DLLVM_ENABLE_ASSERTIONS=OFF \
+        -DLLVM_ENABLE_EXPENSIVE_CHECKS=OFF \
+        -DLLVM_ENABLE_BACKTRACES=OFF \
+        -DLLVM_BUILD_TOOLS=OFF \
+        -DLLVM_ENABLE_THREADS=OFF \
+        -DLLVM_BUILD_LLVM_DYLIB=OFF \
 		-DBUILD_SHARED_LIBS=OFF \
 		-DLLVM_INCLUDE_TESTS=OFF \
 		-DLLVM_BUILD_TESTS=OFF \
 		-DLLVM_OPTIMIZED_TABLEGEN=ON \
 		-DLLVM_TARGETS_TO_BUILD="WebAssembly" \
-		-DLLVM_ENABLE_RTTI=ON \
 		-DLLVM_ENABLE_PROJECTS="clang;lld;clang-tools-extra" \
 		-DCMAKE_INSTALL_PREFIX=$(SRC)/install/llvm \
 		-DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
@@ -140,10 +156,11 @@ configure/llvm-debug: .target/configure/llvm-debug
 .target/configure/llvm-debug: Makefile .target/upstream/llvm-project
 	@echo "Configuring LLVM..."
 	@mkdir -p build/llvm-debug
-	@CXXFLAGS="-Dwait4=__syscall_wait4" \
+	@CXXFLAGS="-Dwait4=__syscall_wait4 -s SAFE_HEAP=1" \
 	LDFLAGS="-s ALLOW_MEMORY_GROWTH=1 \
+		-s SAFE_HEAP=1 -s STACK_OVERFLOW_CHECK=1 \
 		-s INVOKE_RUN=0 -s EXIT_RUNTIME=0 \
-		-s ASSERTIONS=1 \
+		-s ASSERTIONS=2 \
 		-s EXPORTED_FUNCTIONS=_main,_free,_malloc \
 		-s EXPORTED_RUNTIME_METHODS=FS,PROXYFS,ERRNO_CODES,allocateUTF8,ccall,cwrap \
 		-lproxyfs.js \
@@ -151,14 +168,19 @@ configure/llvm-debug: .target/configure/llvm-debug
 	" emcmake cmake -G Ninja \
 		-B build/llvm-debug \
 		-S upstream/${LLVM}/llvm \
-		-DCMAKE_BUILD_TYPE=Debug \
-		-DLLVM_ENABLE_ASSERTIONS=OFF \
+		-DCMAKE_BUILD_TYPE=MINSIZEREL \
+        -DLLVM_ENABLE_DUMP=OFF \
+        -DLLVM_ENABLE_ASSERTIONS=OFF \
+        -DLLVM_ENABLE_EXPENSIVE_CHECKS=OFF \
+        -DLLVM_ENABLE_BACKTRACES=OFF \
+        -DLLVM_BUILD_TOOLS=OFF \
+        -DLLVM_ENABLE_THREADS=OFF \
+        -DLLVM_BUILD_LLVM_DYLIB=OFF \
 		-DBUILD_SHARED_LIBS=OFF \
 		-DLLVM_INCLUDE_TESTS=OFF \
 		-DLLVM_BUILD_TESTS=OFF \
 		-DLLVM_OPTIMIZED_TABLEGEN=ON \
 		-DLLVM_TARGETS_TO_BUILD="WebAssembly" \
-		-DLLVM_ENABLE_RTTI=ON \
 		-DLLVM_ENABLE_PROJECTS="clang;lld;clang-tools-extra" \
 		-DCMAKE_INSTALL_PREFIX=$(SRC)/install/llvm-debug \
 		-DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
