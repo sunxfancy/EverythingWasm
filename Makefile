@@ -7,6 +7,7 @@ PWD=$(shell pwd)
 gen_linker_flags=-DCMAKE_EXE_LINKER_FLAGS="$(1)" -DCMAKE_SHARED_LINKER_FLAGS="$(1)" -DCMAKE_MODULE_LINKER_FLAGS="$(1)"
 COMMA=,
 SRC=/src
+WASI_SDK=$(SRC)/upstream/wasi-sdk-23.0
 
 DOCKER_RUN=docker run -it --rm  -v "$(PWD):/src" -w /src --user `id -u`  everything_wasm
 WRAP_JS=bash $(SRC)/tooling/wrap-mjs/wrap-mjs.sh
@@ -19,6 +20,10 @@ all: clang wasm-ld
 clang: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
 clang-debug: .target/docker
+	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
+compiler-rt: .target/docker
+	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
+libfuzzer: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
 clang-format: .target/docker
 	$(DOCKER_RUN) make INSIDE_DOCKER=1 $@
@@ -99,6 +104,24 @@ out/clang-format.wasm: .target/configure/llvm
 	@cp build/llvm/bin/clang-format.js out/clang-format.js
 	@cp build/llvm/bin/clang-format.wasm out/clang-format.wasm
 
+compiler-rt: out/compiler-rt.wasm
+out/compiler-rt.wasm: .target/configure/compiler-rt
+	@cd build/compiler-rt && ninja -v clang_rt.fuzzer_no_main
+	@mkdir -p out
+	
+libfuzzer:
+	@mkdir -p build/libfuzzer 
+	@cd build/libfuzzer && \
+		$(WASI_SDK)/bin/clang++ -D__EMSCRIPTEN__ \
+		 -D_WASI_EMULATED_PROCESS_CLOCKS \
+		 -D_WASI_EMULATED_SIGNAL \
+		 -D_WASI_EMULATED_MMAN \
+		 --target=wasm32-wasi-threads \
+		 --sysroot=$(WASI_SDK)/share/wasi-sysroot \
+		 -c -O2 -fno-omit-frame-pointer -std=c++14 $(SRC)/upstream/llvm-project-18.1.8.src/compiler-rt/lib/fuzzer/*.cpp
+	@cd build/libfuzzer && $(WASI_SDK)/bin/llvm-ar rcs libFuzzer.a *.o
+
+
 wasm-ld: out/lld.wasm
 out/lld.wasm: .target/configure/llvm
 	@cd build/llvm && ninja -v lld 
@@ -143,6 +166,40 @@ configure/llvm: .target/configure/llvm
 		-DCMAKE_TOOLCHAIN_FILE=${EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake && \
 		mkdir -p .target/configure && touch .target/configure/llvm
 
+configure/compiler-rt: .target/configure/compiler-rt
+.target/configure/compiler-rt: Makefile .target/upstream/llvm-project
+	cmake -G Ninja \
+		-B build/compiler-rt \
+		-S upstream/${LLVM}/llvm \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_C_COMPILER_WORKS=ON \
+    	-DCMAKE_CXX_COMPILER_WORKS=ON \
+        -DLLVM_ENABLE_DUMP=OFF \
+        -DLLVM_ENABLE_ASSERTIONS=OFF \
+        -DLLVM_ENABLE_EXPENSIVE_CHECKS=OFF \
+        -DLLVM_ENABLE_BACKTRACES=OFF \
+        -DLLVM_BUILD_TOOLS=OFF \
+        -DLLVM_ENABLE_THREADS=OFF \
+        -DLLVM_BUILD_LLVM_DYLIB=OFF \
+		-DBUILD_SHARED_LIBS=OFF \
+		-DLLVM_INCLUDE_TESTS=OFF \
+		-DLLVM_BUILD_TESTS=OFF \
+		-DLLVM_OPTIMIZED_TABLEGEN=ON \
+		-DLLVM_TARGETS_TO_BUILD="WebAssembly" \
+		-DCOMPILER_RT_DEFAULT_TARGET_ONLY=ON \
+		-DLLVM_HOST_TRIPLE="x86_64" \
+		-DLLVM_DEFAULT_TARGET_TRIPLE="wasm32-wasi-threads" \
+		-DCMAKE_C_COMPILER_TARGET="wasm32-wasi-threads"\
+		-DLLVM_ENABLE_PROJECTS="compiler-rt" \
+		-DCMAKE_INSTALL_PREFIX=$(SRC)/install/compiler-rt \
+		-DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
+		-DCOMPILER_RT_BUILD_LIBFUZZER=ON \
+		-DUNIX=1 \
+		-DCMAKE_C_FLAGS="-D_WASI_EMULATED_MMAN" \
+		-DCMAKE_CXX_FLAGS="-D_WASI_EMULATED_MMAN" \
+		-DCMAKE_SYSROOT="$(WASI_SDK)/share/wasi-sysroot" \
+		-DCMAKE_TOOLCHAIN_FILE=$(WASI_SDK)/share/cmake/wasi-sdk-pthread.cmake && \
+		mkdir -p .target/configure && touch .target/configure/compiler-rt
 
 wasm-ld-debug: debug/lld.wasm
 debug/lld.wasm: .target/configure/llvm-debug
@@ -181,7 +238,7 @@ configure/llvm-debug: .target/configure/llvm-debug
 		-DLLVM_BUILD_TESTS=OFF \
 		-DLLVM_OPTIMIZED_TABLEGEN=ON \
 		-DLLVM_TARGETS_TO_BUILD="WebAssembly" \
-		-DLLVM_ENABLE_PROJECTS="clang;lld;clang-tools-extra" \
+		-DLLVM_ENABLE_PROJECTS="clang;lld;clang-tools-extra;compiler-rt" \
 		-DCMAKE_INSTALL_PREFIX=$(SRC)/install/llvm-debug \
 		-DCMAKE_EXPORT_COMPILE_COMMANDS=1 \
 		-DCMAKE_TOOLCHAIN_FILE=${EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake && \
